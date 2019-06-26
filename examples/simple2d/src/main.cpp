@@ -57,6 +57,8 @@ void outputNode( std::ofstream & out, ctBranch * b, Data * data, vector<int> & p
 
 
 void removeNonExtremum( vector<vector<int> > & pool, Data * data, vector<int> & invis, vector<int> & nodes ) {
+  invis.clear();
+  nodes.clear();
   for (int i = 0; i < pool.size(); i++) {
     for (int j = 0; j < pool[i].size(); j+=pool[i].size()-1) {
       int idx = pool[i][j];
@@ -64,6 +66,20 @@ void removeNonExtremum( vector<vector<int> > & pool, Data * data, vector<int> & 
       nodes.push_back(idx);
     }
   }
+}
+
+
+void restructTree( vector<vector<int> > & pool, Data * data, vector<int> & nodes, vector<vector<int> > & newpool ) {
+  for (int i = 0; i < pool.size(); i++) {
+    vector<int> vpool;
+    for (int j = 0; j < pool[i].size(); j++) {
+      int node = pool[i][j];
+      if (std::find(nodes.begin(), nodes.end(), node) != nodes.end()) {
+        vpool.push_back(node);
+      }
+    }
+    newpool.push_back(vpool);
+  }  
 }
 
 
@@ -269,11 +285,15 @@ int main( int argc, char ** argv ) {
     for (auto it = ipool.begin(); it < ipool.end(); it++){
       if ((*it).size() > 2) { pool.push_back(*it); }
     }
-    
-    sortTree( pool, &data );
-    vector<int> nodes;
-    removeNonExtremum(pool, &data, invis, nodes);
 
+    vector<int> nodes;
+    vector<vector<int> > newpool;
+
+    sortTree( pool, &data );
+    removeNonExtremum(pool, &data, invis, nodes);
+    restructTree(pool, &data, nodes, newpool);
+    pool = newpool;
+    
     printNode(out, pool, &data);
 
     // print invis
