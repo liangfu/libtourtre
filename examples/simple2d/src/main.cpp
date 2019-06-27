@@ -53,23 +53,64 @@ void outputNode( std::ofstream & out, ctBranch * b, Data * data, vector<int> & p
 	}
 } 
 
-#define HEIGHT      32
-
-
-void removeNonExtremum( vector<vector<int> > & pool, Data * data, vector<int> & invis, vector<int> & nodes ) {
+void getNode( vector<vector<int> > & pool, Data * data, vector<int> & invis, vector<int> & nodes ) {
+  vector<int> xnodes;  
+  for (int i = 0; i < pool.size(); i++) {
+    for (int j = 0; j < pool[i].size(); j+=pool[i].size()-1) {
+      int node = pool[i][j];
+      if (find(xnodes.begin(), xnodes.end(), node) == xnodes.end()) {
+        xnodes.push_back(node);
+      }
+    }
+  }
+  vector<int> cnodes;  
+  for (int i = 0; i < pool.size(); i++) {
+    for (int j = 0; j < pool[i].size(); j++) {
+      int node = pool[i][j];
+      for (int k = i+1; k < pool.size(); k++) {
+        if (find(pool[k].begin(), pool[k].end(), node) != pool[k].end() &&
+            find( cnodes.begin(),  cnodes.end(), node) ==  cnodes.end()) {
+          cnodes.push_back(node);
+        }
+      }
+    }
+  }
+  xnodes.insert(xnodes.end(), cnodes.begin(), cnodes.end());
   invis.clear();
   nodes.clear();
   for (int i = 0; i < pool.size(); i++) {
-    for (int j = 0; j < pool[i].size(); j+=pool[i].size()-1) {
-      int idx = pool[i][j];
-      invis.push_back((int)data->data[idx]);
-      nodes.push_back(idx);
+    for (int j = 0; j < pool[i].size(); j++) {
+      int node = pool[i][j];
+      if (find(xnodes.begin(), xnodes.end(), node) != xnodes.end()) {
+        invis.push_back((int)data->data[node]);
+        nodes.push_back(node);
+      }
     }
   }
 }
 
 
+void simplifyTree( vector<vector<int> > & pool, Data * data, vector<vector<int> > & newpool, const int thresh ) {
+  newpool.clear();
+  for (int i = 0; i < pool.size(); i++){
+    int valid = 0;
+    if (pool[i].size() > 3) { valid = 1; }
+    if (pool[i].size() >= 2) {
+      if (fabs(data->data[*pool[i].begin()] - data->data[*pool[i].rbegin()]) >= thresh) { valid = 1; }
+      int flag = 0;
+      for (int j = 0; j < i; j++) {
+        if (find(pool[j].begin(), pool[j].end(), *pool[i].begin()) != pool[j].end()) { flag |= 1; }
+        if (find(pool[j].begin(), pool[j].end(), *pool[i].rbegin()) != pool[j].end()) { flag |= 2; }
+      }
+      if (flag == 3) {valid = 1;}
+    }
+    if (valid) { newpool.push_back(pool[i]); }
+  }
+}
+
+
 void restructTree( vector<vector<int> > & pool, Data * data, vector<int> & nodes, vector<vector<int> > & newpool ) {
+  newpool.clear();
   for (int i = 0; i < pool.size(); i++) {
     vector<int> vpool;
     for (int j = 0; j < pool[i].size(); j++) {
@@ -79,23 +120,35 @@ void restructTree( vector<vector<int> > & pool, Data * data, vector<int> & nodes
       }
     }
     newpool.push_back(vpool);
+  }
+  for (int i = 0; i < newpool.size(); i++) {
+    if (newpool[i].size() > 0) {
+      for (int j = i+1; j < newpool.size(); j++) {
+        auto it = find(newpool[j].begin(), newpool[j].end(), *newpool[i].rbegin());
+        if (it != newpool[j].end()) {
+          newpool[i].insert(newpool[i].end(), it+1, newpool[j].end());
+          newpool[j].erase(it+1, newpool[j].end());
+        }
+      }
+    }
   }  
+  for (auto it = newpool.begin(); it < newpool.end(); it++) {
+    if ((*it).size()==1) { newpool.erase(it, it+1); }
+  }
 }
 
 
-void printNode( std::ofstream & out, vector<vector<int> > & pool, Data * data ) {
+void printNode( std::ofstream & out, vector<vector<int> > & pool, Data * data, int height ) {
   for (int i = 0; i < pool.size(); i++) {
     for (int j = 0; j < pool[i].size(); j++) {
       int idx = pool[i][j];
       out << "  node" << idx;
       out << "[";
-      out << "pos=\"" << idx   % HEIGHT << "," << HEIGHT - (idx   / HEIGHT) << "!\"";
+      out << "pos=\"" << idx   % height << "," << height - (idx   / height) << "!\"";
       out << ", ";
-      out << "label=\"" << idx   % HEIGHT << "," << idx   / HEIGHT << "\\n" << (int)data->data[idx] << "\"";
+      out << "label=\"" << idx   % height << "," << idx   / height << "\\n" << (int)data->data[idx] << "\"";
       out << "]\n";
       out << "  invis" << (int)data->data[idx] << "[style=invis];\n";
-      // invis.push_back((int)data->data[idx]);
-      // nodes.push_back(idx);
     }
   }
 }
@@ -103,12 +156,10 @@ void printNode( std::ofstream & out, vector<vector<int> > & pool, Data * data ) 
 
 void outputRank( std::ofstream & out, vector<int> & nodes, Data * data, int rank, vector<int> & vpool ) {
   for (int i = 0; i < nodes.size(); i++) {
-    // for (int j = 0; j < pool[i].size(); j++) {
-      int index = nodes[i];
-      if (data->data[index] == rank) {
-        vpool.push_back(index);
-      }
-    // }
+    int index = nodes[i];
+    if (data->data[index] == rank) {
+      vpool.push_back(index);
+    }
   }
 } 
 
@@ -278,36 +329,45 @@ int main( int argc, char ** argv ) {
     out << "  rankdir=\"TB\"\n";
 
     vector<int> invis;
-    vector<vector<int> > ipool;
     vector<vector<int> > pool;
-    
-		outputTree( out, root, &data, ipool);
-    for (auto it = ipool.begin(); it < ipool.end(); it++){
-      if ((*it).size() > 2) { pool.push_back(*it); }
-    }
-
-    vector<int> nodes;
     vector<vector<int> > newpool;
+    vector<int> nodes;
+    const int height = data.size[0];
+    
+		outputTree( out, root, &data, newpool);
+    sortTree( newpool, &data );
 
-    sortTree( pool, &data );
-    removeNonExtremum(pool, &data, invis, nodes);
+    const int maxval = data.maxValue;
+    const int minval = data.minValue;
+    const float thresh = (maxval - minval)*.2;
+    
+    simplifyTree(newpool, &data, pool, thresh);
+    getNode(pool, &data, invis, nodes);         // remove non-extremum
     restructTree(pool, &data, nodes, newpool);
+    // mergeNode(pool, &data, thresh*.2);
     pool = newpool;
     
-    printNode(out, pool, &data);
+    // simplifyTree(newpool, &data, pool, thresh);
+    // getNode(pool, &data, invis, nodes);
+    // restructTree(pool, &data, nodes, newpool);
+    // pool = newpool;
+    
+    printNode(out, pool, &data, height);
 
     // print invis
-    std::sort(invis.begin(), invis.end());
-    std::reverse(invis.begin(), invis.end());
-    out << "  invis" << invis[0];
-    for (int i = 1; i < invis.size(); i++) {
-      if (invis[i-1] != invis[i]) { out << " -> invis" << invis[i]; }
+    if (invis.size()>0) {
+      std::sort(invis.begin(), invis.end());
+      std::reverse(invis.begin(), invis.end());
+      out << "  invis" << invis[0];
+      for (int i = 1; i < invis.size(); i++) {
+        if (invis[i-1] != invis[i]) { out << " -> invis" << invis[i]; }
+      }
+      out << " [style=invis];\n";
     }
-    out << " [style=invis];\n";
 
     printTree( out, &data, pool, nodes );
 
-    for (int rank = 0; rank < 32767; rank++) {
+    for (int rank = minval; rank <= maxval; rank++) {
       vector<int> vpool;
       outputRank( out, nodes, &data, rank, vpool);
       if (vpool.size() > 0) {
